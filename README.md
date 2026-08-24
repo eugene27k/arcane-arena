@@ -28,15 +28,16 @@ systems therefore stop the first launch and ask you to confirm. This is the
 "we don't know who wrote this" warning, not a virus warning, and it happens
 once.
 
-**macOS** — double-clicking shows *"Arcane Arena" cannot be opened because the
-developer cannot be verified*. Instead:
+**macOS** — the first double-click shows *Apple could not verify "Arcane Arena"
+is free of malware*, with only **Done** and **Move to Trash**. Nothing is wrong;
+click **Done**, then:
 
-1. **Right-click** (or Control-click) *Arcane Arena* in Applications → **Open**
-2. Click **Open** in the dialog that follows
+1. **System Settings → Privacy & Security**
+2. Scroll down to **Security** — *"Arcane Arena" was blocked to protect your Mac*
+3. Click **Open Anyway**, authenticate, and confirm **Open**
 
-If that dialog offers no Open button, go to  **System Settings → Privacy &
-Security**, scroll to the bottom, and click **Open Anyway** next to the message
-about Arcane Arena.
+That is the whole ritual, once, forever. (On macOS 14 and earlier the older
+right-click → **Open** shortcut still works and is quicker.)
 
 **Windows** — SmartScreen shows *Windows protected your PC*. Click
 **More info**, then **Run anyway**.

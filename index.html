@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arcane Arena</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <!-- HUD (visible during gameplay) -->
+  <div id="hud" class="hidden">
+    <div id="crosshair"><div class="ch-dot"></div><div class="ch-ring"></div></div>
+    <div id="hitmarker"></div>
+    <!-- Mega Blast: five seconds is far too long to read off a slot corner -->
+    <div id="charge-meter" class="hidden">
+      <div id="charge-label">MEGA BLAST</div>
+      <div id="charge-track"><div id="charge-fill"></div></div>
+    </div>
+
+    <div id="vignette-damage"></div>
+    <div id="vignette-lowhp"></div>
+    <div id="vignette-heal"></div>
+    <!-- Sense Mode: one needle, one radius inside the damage ring -->
+    <div id="sense-indicator" class="hidden">
+      <div id="sense-arrow"><span class="sense-tip"></span><span class="sense-tail"></span></div>
+    </div>
+    <div id="dmg-indicators"></div>
+
+    <div id="top-center">
+      <div id="wave-label">WAVE 1</div>
+      <div id="enemies-label">Enemies Remaining: 0</div>
+    </div>
+
+    <div id="kills-label">Kills: 0</div>
+    <div id="godmode-badge" class="hidden">⚜ GOD MODE</div>
+
+    <div id="bars">
+      <div class="bar-row">
+        <div class="bar hp-bar"><div id="hp-fill"></div><span id="hp-text">100 / 100</span></div>
+      </div>
+      <div class="bar-row">
+        <div class="bar mana-bar"><div id="mana-fill"></div><span id="mana-text">100 / 100</span></div>
+      </div>
+      <div id="dash-row"><div id="dash-fill"></div><span>DASH</span></div>
+      <div id="ward-row" class="off">
+        <span class="ward-key">R</span>
+        <span class="ward-name">MANA SHIELD</span>
+        <span class="ward-cost">5 / s</span>
+      </div>
+      <div id="auto-row" class="off">
+        <span class="auto-key">X</span>
+        <span class="auto-name">AUTO WEAPON</span>
+        <span class="auto-state">OFF</span>
+      </div>
+      <div id="sense-row" class="off">
+        <span class="sense-key">C</span>
+        <span class="sense-name">SENSE</span>
+        <span class="sense-cost">3 / s</span>
+      </div>
+    </div>
+
+    <div id="spell-slots">
+      <div class="slot" id="slot-1">
+        <div class="slot-key">1</div>
+        <div class="slot-icon">🔥</div>
+        <div class="slot-name">Fireball</div>
+        <div class="slot-cost">15</div>
+        <div class="slot-cd"></div>
+      </div>
+      <div class="slot locked" id="slot-2">
+        <div class="slot-key">2</div>
+        <div class="slot-icon">🔒</div>
+        <div class="slot-name">Locked</div>
+        <div class="slot-cost"></div>
+        <div class="slot-cd"></div>
+      </div>
+      <div class="slot locked" id="slot-3">
+        <div class="slot-key">3</div>
+        <div class="slot-icon">🔒</div>
+        <div class="slot-name">Locked</div>
+        <div class="slot-cost"></div>
+        <div class="slot-cd"></div>
+      </div>
+      <div class="slot free" id="slot-4">
+        <div class="slot-key">4</div>
+        <div class="slot-icon">🪄</div>
+        <div class="slot-name">Staff Strike</div>
+        <div class="slot-cost">∞ free</div>
+        <div class="slot-cd"></div>
+      </div>
+      <div class="slot locked" id="slot-5">
+        <div class="slot-key">5</div>
+        <div class="slot-icon">🔒</div>
+        <div class="slot-name">Locked</div>
+        <div class="slot-cost"></div>
+        <div class="slot-cd"></div>
+      </div>
+      <div class="slot locked" id="slot-6">
+        <div class="slot-key">6</div>
+        <div class="slot-icon">🔒</div>
+        <div class="slot-name">Locked</div>
+        <div class="slot-cost"></div>
+        <div class="slot-cd"></div>
+      </div>
+      <div class="slot locked" id="slot-7">
+        <div class="slot-key">7</div>
+        <div class="slot-icon">🔒</div>
+        <div class="slot-name">Locked</div>
+        <div class="slot-cost"></div>
+        <div class="slot-cd"></div>
+      </div>
+    </div>
+
+    <div id="banner"></div>
+    <div id="toast"></div>
+  </div>
+
+  <!-- Main menu -->
+  <div id="menu-screen" class="screen">
+    <div class="menu-inner">
+      <h1 class="game-title">ARCANE<br/>ARENA</h1>
+      <p class="tagline">Endless waves rise from the depths of the ruined cathedral.</p>
+      <p id="best-wave" class="best-wave hidden"></p>
+      <div class="menu-buttons">
+        <button id="btn-start" class="menu-btn primary">Start Game</button>
+        <button id="btn-settings" class="menu-btn">Settings</button>
+        <button id="btn-quit" class="menu-btn">Quit</button>
+      </div>
+      <div class="controls-hint">
+        <span><b>WASD</b> Move</span><span><b>Mouse</b> Aim</span><span><b>LMB / E / F</b> Cast</span>
+        <span><b>Space</b> Jump <i>(×2, ×3 = air jumps, cost mana)</i></span><span><b>Shift</b> Sprint</span><span><b>Ctrl</b> Dash</span>
+        <span><b>RMB / V</b> Melee <i>(Staff Strike, or Onikiri while carried)</i></span>
+        <span><b>R</b> Mana Shield <i>(costs mana each second)</i></span>
+        <span><b>X</b> Auto Weapon <i>(the book draws every shot, heaviest first)</i></span>
+        <span><b>C</b> Sense <i>(a needle to the nearest demon, through stone — costs mana each second)</i></span>
+        <span><b>1 – 7</b> Spells</span><span><b>Esc</b> Pause</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upgrade selection -->
+  <div id="upgrade-screen" class="screen hidden">
+    <div class="upgrade-inner">
+      <h2 id="upgrade-title">WAVE 1 CLEARED</h2>
+      <p class="upgrade-sub">Choose an upgrade</p>
+      <div id="upgrade-cards"></div>
+    </div>
+  </div>
+
+  <!-- Pause -->
+  <div id="pause-screen" class="screen hidden">
+    <div class="menu-inner">
+      <h2 class="pause-title">PAUSED</h2>
+      <div class="menu-buttons">
+        <button id="btn-resume" class="menu-btn primary">Resume</button>
+        <button id="btn-settings-pause" class="menu-btn">Settings</button>
+        <button id="btn-abandon" class="menu-btn">Abandon Run</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div id="settings-screen" class="screen hidden">
+    <div class="menu-inner settings-inner">
+      <h2 class="pause-title">SETTINGS</h2>
+      <div class="settings-rows">
+        <label class="settings-row">
+          <span>Mouse Sensitivity</span>
+          <input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" />
+          <b id="set-sens-val">×1.00</b>
+        </label>
+        <label class="settings-row">
+          <span>Invert Y Axis</span>
+          <input id="set-inverty" type="checkbox" />
+          <b></b>
+        </label>
+        <label class="settings-row">
+          <span>Field of View</span>
+          <input id="set-fov" type="range" min="60" max="100" step="1" />
+          <b id="set-fov-val">74°</b>
+        </label>
+        <label class="settings-row">
+          <span>Sound Volume</span>
+          <input id="set-volume" type="range" min="0" max="1" step="0.05" />
+          <b id="set-volume-val">100%</b>
+        </label>
+      </div>
+
+      <h3 class="settings-head">GAMEPLAY</h3>
+      <div class="settings-rows">
+        <label class="settings-row">
+          <span>Auto Weapon</span>
+          <input id="set-auto-weapon" type="checkbox" />
+          <b>X</b>
+        </label>
+      </div>
+      <p class="settings-hint">Auto Weapon draws a different spell for every shot,
+        leaning on the heaviest one the well can pay for. Melee stays on RMB / V.</p>
+
+      <h3 class="settings-head">GRAPHICS</h3>
+      <div class="settings-rows">
+        <label class="settings-row">
+          <span>Quality</span>
+          <select id="set-quality">
+            <option value="low">Low — bloom only, no atmosphere</option>
+            <option value="medium">Medium — full atmosphere (recommended)</option>
+            <option value="high">High — adds ambient occlusion, sharper</option>
+          </select>
+          <b id="set-quality-val"></b>
+        </label>
+      </div>
+
+      <h3 class="settings-head">BACKGROUND MUSIC</h3>
+      <div class="settings-rows">
+        <label class="settings-row">
+          <span>Play Music</span>
+          <input id="set-music-on" type="checkbox" />
+          <b></b>
+        </label>
+        <label class="settings-row">
+          <span>Music Volume</span>
+          <input id="set-music-vol" type="range" min="0" max="1" step="0.05" />
+          <b id="set-music-vol-val">60%</b>
+        </label>
+        <label class="settings-row">
+          <span>Play Order</span>
+          <select id="set-music-order">
+            <option value="name">In order, by file name</option>
+            <option value="random">Random (shuffled)</option>
+          </select>
+          <b></b>
+        </label>
+      </div>
+
+      <div class="music-panel">
+        <div class="music-bar">
+          <div id="music-now" class="music-now">No music loaded</div>
+          <div class="music-transport">
+            <button id="music-prev" class="music-tbtn" title="Previous track">⏮</button>
+            <button id="music-toggle" class="music-tbtn" title="Play / pause">▶</button>
+            <button id="music-next" class="music-tbtn" title="Next track">⏭</button>
+          </div>
+        </div>
+        <div id="music-list" class="music-list"></div>
+        <div class="music-actions">
+          <button id="music-add" class="menu-btn small">Upload MP3 / WAV…</button>
+          <input id="music-file" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" multiple class="hidden" />
+        </div>
+        <p id="music-status" class="settings-hint"></p>
+      </div>
+
+      <p class="settings-hint">M mutes everything during play. Settings save automatically.</p>
+      <div class="menu-buttons">
+        <button id="btn-settings-back" class="menu-btn primary">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Death -->
+  <div id="death-screen" class="screen hidden">
+    <div class="menu-inner">
+      <h2 class="death-title">YOU HAVE FALLEN</h2>
+      <div id="death-stats" class="death-stats"></div>
+      <div class="menu-buttons">
+        <button id="btn-restart" class="menu-btn primary">Restart Run</button>
+        <button id="btn-tomenu" class="menu-btn">Main Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

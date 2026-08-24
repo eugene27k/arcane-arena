@@ -1,0 +1,111 @@
+{
+  "name": "arcane-arena",
+  "version": "0.1.0",
+  "description": "Arcane Arena — third-person magical arena roguelite (MVP vertical slice)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test \"test/*.test.js\"",
+    "music": "node tools/generateMusic.mjs",
+    "electron": "npm run build && electron .",
+    "icon": "node tools/generateIcon.mjs",
+    "dist:mac": "npm run build && npm run icon && electron-builder --mac",
+    "dist:win": "npm run build && npm run icon && electron-builder --win",
+    "dist": "npm run build && npm run icon && electron-builder --mac --win"
+  },
+  "dependencies": {
+    "three": "0.168.0"
+  },
+  "devDependencies": {
+    "electron": "^40.10.6",
+    "electron-builder": "26.15.3",
+    "vite": "5.4.8"
+  },
+  "main": "electron/main.cjs",
+  "author": "Eugene K",
+  "build": {
+    "appId": "com.eugenek.arcane-arena",
+    "productName": "Arcane Arena",
+    "copyright": "Copyright (c) 2026 Eugene K",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "!**/*.map",
+      "!node_modules/**/*"
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.action-games",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "darkModeSupport": true,
+      "identity": "-",
+      "hardenedRuntime": false,
+      "notarize": false
+    },
+    "dmg": {
+      "title": "Arcane Arena",
+      "icon": "build/icon.icns",
+      "artifactName": "ArcaneArena-${version}-mac-universal.${ext}",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "shortcutName": "Arcane Arena",
+      "artifactName": "ArcaneArena-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "ArcaneArena-${version}-portable.${ext}"
+    },
+    "npmRebuild": false,
+    "electronLanguages": [
+      "en-US"
+    ]
+  }
+}

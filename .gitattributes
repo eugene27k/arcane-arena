@@ -1,0 +1,13 @@
+# Normalize line endings on commit; check out native on each platform.
+* text=auto eol=lf
+
+# Windows-native scripts must keep CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binaries — never diff, never merge, never normalize.
+*.mp3 binary
+*.wav binary
+*.png binary
+*.ico binary
+*.icns binary

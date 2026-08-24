@@ -16,9 +16,9 @@ No Node, no terminal, no build step — grab a file from the
 
 | You have | Download | Then |
 |---|---|---|
-| **macOS** (Apple Silicon or Intel) | `ArcaneArena-0.1.0-mac-universal.dmg` | Open it, drag **Arcane Arena** onto **Applications** |
-| **Windows 10 / 11** | `ArcaneArena-Setup-0.1.0.exe` | Run it — it installs and makes a Start-menu shortcut |
-| **Windows, no install** | `ArcaneArena-0.1.0-portable.exe` | Just run it; nothing is written to Program Files |
+| **macOS** (Apple Silicon or Intel) | `ArcaneArena-…-mac-universal.dmg` | Open it, drag **Arcane Arena** onto **Applications** |
+| **Windows 10 / 11** | `ArcaneArena-Setup-….exe` | Run it — it installs and makes a Start-menu shortcut |
+| **Windows, no install** | `ArcaneArena-…-portable.exe` | Just run it; nothing is written to Program Files |
 
 ### First launch
 
@@ -71,10 +71,17 @@ npm run dist        # both
 ```
 
 The shell is [electron/main.cjs](electron/main.cjs) and holds no game logic — it
-serves `dist/` over a private `arena://` scheme and grants pointer lock. The
-custom scheme rather than `file://` is load-bearing: the bundle is an ES module,
-and modules are blocked on `file://`'s opaque origin, which would also leave
-`localStorage` shared with every other local page instead of being the game's own.
+serves `dist/` over a private `arena://` scheme, grants pointer lock, and pins
+page zoom at 1x so Ctrl-dash-plus-wheel doesn't rescale the HUD.
+
+`arena://` rather than `file://` is a deliberate choice, not a workaround:
+Electron grants `file://` extra privileges by default, so the module bundle
+*would* load from it. The custom scheme buys a stable tuple origin instead — and
+origin is where `localStorage` lives, so settings and the best-wave record are
+the game's own rather than shared with every other local page. It is also why
+this isn't a localhost server: an origin containing a port number silently
+resets every saved setting the day the port changes, and a listening socket
+earns a firewall prompt on first launch.
 
 The app icon is generated too — `npm run icon` renders
 [tools/generateIcon.mjs](tools/generateIcon.mjs) into `build/icon.{png,ico,icns}`,

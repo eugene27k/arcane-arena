@@ -107,40 +107,157 @@ export class ParticleSystem {
   clear() { this.particles.length = 0; }
 }
 
-// Small pool of reusable point lights for explosions / muzzle flashes / impacts.
+// Fixed-size rig of point lights for every dynamic light in the game — muzzle
+// flashes, explosions, spawn portals, bolts in flight, the held beam, the Mega
+// Blast sun, and the beacons over dropped relics.
+//
+// Every slot is added to the scene at construction and is then never removed,
+// never hidden, and never re-added. That is not tidiness, it is the whole
+// point: three bakes the scene's light *counts* into each material's program
+// cache key, so a single point light appearing or vanishing re-keys every lit
+// material in the arena and recompiles it from source. A wave opening nine
+// portals used to cost seconds of frozen frames that way. An idle slot sits at
+// intensity zero instead — a few ALU ops per fragment, and no recompiles ever.
+//
+// Sustained users take a slot with acquire(), drive it each frame with hold(),
+// and hand it back with release(). A slot can be revoked under a low-priority
+// holder when something more important needs one; the stale handle then goes
+// quietly inert rather than writing over the new owner.
+//
+// The rig is deliberately small. A point light costs the fragment shader real
+// work on every lit pixel whether or not it is switched on, and measured on an
+// M4 that is around a millisecond per light in a busy frame — so the budget is
+// sized to what the game actually asks for. Sampling a full run, all but a
+// fraction of frames want zero or one dynamic light; only the burst of portals
+// that opens a wave wants more, and there the ones that miss out still have
+// their emissive ring and its bloom. Four slots leaves the resting scene close
+// to where it was before the rig existed and is *cheaper* than the old code in
+// the middle of a fight, where six flashes could be lit at once.
 export class LightPool {
-  constructor(scene, count = 6) {
-    this.lights = [];
+  constructor(scene, count = 4) {
+    this.slots = [];
     for (let i = 0; i < count; i++) {
-      const l = new THREE.PointLight(0xffffff, 0, 20, 2);
-      l.visible = false;
-      scene.add(l);
-      this.lights.push({ light: l, time: 0, duration: 1, peak: 0 });
+      const light = new THREE.PointLight(0xffffff, 0, 20, 2);
+      light.castShadow = false;
+      scene.add(light);
+      this.slots.push({ light, gen: 0, time: 0, duration: 1, peak: 0, held: false, prio: -1 });
     }
   }
 
-  flash(pos, color, intensity = 60, distance = 16, duration = 0.35) {
-    let slot = this.lights.find((s) => s.time <= 0);
-    if (!slot) {
-      slot = this.lights.reduce((a, b) => (a.time < b.time ? a : b));
+  _free(s) {
+    s.held = false;
+    s.prio = -1;
+    s.time = 0;
+    s.peak = 0;
+    s.light.intensity = 0;
+  }
+
+  // Pick a slot for a request of the given priority: an idle one first, then
+  // the flash closest to burning out, then the weakest sustained holder — but
+  // only if the newcomer actually outranks it. Returns null when everything in
+  // the rig matters more than what is asking.
+  _claim(prio, evict = true) {
+    let best = null;
+    for (const s of this.slots) {
+      if (!s.held && s.time <= 0) { best = s; break; }
     }
-    slot.light.position.copy(pos);
-    slot.light.color.setHex(color);
-    slot.light.distance = distance;
-    slot.peak = intensity;
-    slot.duration = duration;
-    slot.time = duration;
-    slot.light.visible = true;
+    if (!best && evict) {
+      for (const s of this.slots) {
+        if (s.held) continue;
+        if (!best || s.time < best.time) best = s;
+      }
+    }
+    if (!best && evict) {
+      for (const s of this.slots) {
+        if (s.prio < prio && (!best || s.prio < best.prio)) best = s;
+      }
+    }
+    if (!best) return null;
+    best.gen++; // revoke whatever handle was pointing here
+    return best;
+  }
+
+  // ---------- transient flashes ----------
+  flash(pos, color, intensity = 60, distance = 16, duration = 0.35) {
+    const s = this._claim(0);
+    if (!s) return;
+    s.held = false;
+    s.prio = 0;
+    s.light.position.copy(pos);
+    s.light.color.setHex(color);
+    s.light.distance = distance;
+    s.peak = intensity;
+    s.duration = duration;
+    s.time = duration;
+  }
+
+  // ---------- sustained holds ----------
+  // prio ranks what may evict what: flashes 0, bolts in flight 1, the beacon
+  // over a dropped relic 2, spawn portals 3, and the beam or the gathering Mega
+  // Blast 4 — what the player is holding wins over what the room is doing.
+  acquire(prio = 1) {
+    const s = this._claim(prio);
+    // A handle is still worth having when the rig is full: hold() takes a slot
+    // back for it as soon as one frees, so a beacon that lost its light to a
+    // wave of portals lights up again when they close.
+    const h = { slot: s, gen: s ? s.gen : -1, prio };
+    if (s) this._seat(s, prio);
+    return h;
+  }
+
+  _seat(s, prio) {
+    s.held = true;
+    s.prio = prio;
+    s.time = 0;
+    s.peak = 0;
+    s.light.intensity = 0;
+  }
+
+  alive(h) {
+    return !!h && !!h.slot && h.slot.gen === h.gen;
+  }
+
+  // Drive a held slot, re-seating the handle first if it was turned out by
+  // something more important and a slot has since come free. Silently does
+  // nothing while the rig is full, so a caller never has to check.
+  hold(h, pos, color, intensity, distance) {
+    if (!h) return;
+    if (!h.slot || h.slot.gen !== h.gen) {
+      // Waiting, not evicting: a holder that was turned out takes an idle slot
+      // when one appears, and never cuts a live flash short to get back in.
+      const s = this._claim(h.prio, false);
+      if (!s) return;
+      this._seat(s, h.prio);
+      h.slot = s;
+      h.gen = s.gen;
+    }
+    const l = h.slot.light;
+    l.position.copy(pos);
+    if (color !== undefined) l.color.setHex(color);
+    if (distance !== undefined) l.distance = distance;
+    l.intensity = intensity;
+  }
+
+  release(h) {
+    if (!h || !h.slot || h.slot.gen !== h.gen) return;
+    const s = h.slot;
+    h.slot = null;
+    s.gen++;
+    this._free(s);
   }
 
   update(dt) {
-    for (const s of this.lights) {
-      if (s.time > 0) {
-        s.time -= dt;
-        const t = Math.max(0, s.time / s.duration);
-        s.light.intensity = s.peak * t * t;
-        if (s.time <= 0) s.light.visible = false;
-      }
+    for (const s of this.slots) {
+      if (s.held || s.time <= 0) continue;
+      s.time -= dt;
+      const t = Math.max(0, s.time / s.duration);
+      s.light.intensity = s.peak * t * t;
+      if (s.time <= 0) this._free(s);
     }
+  }
+
+  // Wave reset / run teardown: nothing keeps a slot across a scene clear.
+  clear() {
+    for (const s of this.slots) { s.gen++; this._free(s); }
   }
 }

@@ -18,9 +18,13 @@ import { MusicPlayer } from './audio/musicPlayer.js';
 import { Hud } from './ui/hud.js';
 import { Menus } from './ui/menus.js';
 import { SpawnManager } from './flow/spawnManager.js';
+import { Portal } from './flow/portal.js';
+import {
+  createGruntModel, createFlyerModel, releaseGruntModel, releaseFlyerModel,
+} from './enemies/enemyModels.js';
 import { WaveManager } from './flow/waveManager.js';
 import { UpgradeManager } from './flow/upgradeManager.js';
-import { rollDrops } from './pickups/pickups.js';
+import { rollDrops, Pickup } from './pickups/pickups.js';
 import { BladePickup } from './pickups/bladePickup.js';
 import { LifeRelic } from './pickups/lifeRelic.js';
 import { WAVE_RULES } from './config/waveConfig.js';
@@ -73,7 +77,7 @@ class Game {
     // fx
     this.post = new PostFX(this.renderer, this.scene, this.camera, SETTINGS.quality);
     this.particles = new ParticleSystem(this.scene);
-    this.lightPool = new LightPool(this.scene, 6);
+    this.lightPool = new LightPool(this.scene, 4);
     this.fx = new Effects(this.scene, this.particles, this.lightPool, this.post);
     this.audio = new AudioEngine();
     // Uploaded background music: library loads from IndexedDB now, playback
@@ -214,6 +218,7 @@ class Game {
     });
 
     this.menus.showMenu(this.stats.bestWave);
+    this._prewarmShaders();
     this.clock = new THREE.Clock();
     this.renderer.setAnimationLoop(() => this.frame());
 
@@ -284,6 +289,83 @@ class Game {
         }
       },
     };
+  }
+
+  // Three compiles a material's shader the first time something is drawn with
+  // it, and a demon's hide-plus-rim shader takes a couple of hundred
+  // milliseconds to build. Left alone, that bill lands on the frame the first
+  // grunt walks out of a portal — mid-fight, once per body type. Pay it here
+  // instead, while the menu is still up, by drawing one of everything a wave
+  // will show. The bodies go straight into the enemy pool afterwards, so the
+  // first two demons of the run reuse them.
+  //
+  // It has to be a real frame through the post stack, not renderer.compile():
+  // the scene is drawn into a linear HDR target rather than onto the canvas,
+  // and colour space and tone mapping are both part of a program's cache key,
+  // so compiling against the canvas state would warm a set of shaders the game
+  // never uses and leave the real ones cold. The bodies sit far below the floor
+  // with culling switched off — off screen, but still drawn, which is all a
+  // compile needs.
+  //
+  // This only holds because the rig keeps the scene's light counts fixed: a
+  // shader compiled here is keyed to those counts and would be thrown away and
+  // rebuilt if a light ever appeared or vanished. See LightPool.
+  _prewarmShaders() {
+    const below = new THREE.Vector3(0, -60, 0);
+    const grunt = createGruntModel();
+    const flyer = createFlyerModel();
+    const drops = [new Pickup(this, 'mana', below, 1), new Pickup(this, 'health', below, 1)];
+    // Kept alive rather than pooled: three throws a compiled program away when
+    // the last material using it is disposed, so holding one of each of these
+    // forever is what keeps the shader cache warm for the real ones. A portal,
+    // one blade in the stone and one font — three objects' worth of memory to
+    // never pay for their shaders again.
+    const keep = [
+      new Portal(this, below, false),
+      new BladePickup(this, below),
+      new LifeRelic(this, 'font', below),
+    ];
+    // the mage's own robes, and the katana still sheathed on the rig, are the
+    // other cold shaders at run start: the menu camera never has them on screen
+    const roots = [
+      grunt.root, flyer.root, this.player.modelRoot,
+      ...drops.map((d) => d.group), ...keep.map((k) => k.group),
+    ];
+    const restore = [];
+    for (const r of roots) {
+      r.traverse((o) => {
+        restore.push([o, o.frustumCulled, o.visible]);
+        o.frustumCulled = false;
+        // Groups too, not just what draws: the sheathed katana hangs off a
+        // hidden group until a blade is claimed, and an invisible parent stops
+        // the renderer from ever reaching the steel underneath it.
+        o.visible = true;
+      });
+      if (!r.parent) this.scene.add(r);
+    }
+    grunt.root.position.copy(below);
+    flyer.root.position.copy(below);
+    try {
+      this.post.render(0);
+    } catch {
+      // a warm-up is an optimisation, never a reason to fail to boot
+    }
+    for (const [o, culled, visible] of restore) { o.frustumCulled = culled; o.visible = visible; }
+    // demons and orbs go to their pools, so the first of each in the run is one
+    // of these; the rest are simply parked out of the scene, still referenced
+    this.scene.remove(grunt.root);
+    this.scene.remove(flyer.root);
+    releaseGruntModel(grunt);
+    releaseFlyerModel(flyer);
+    for (const d of drops) d.dispose();
+    for (const k of keep) {
+      this.scene.remove(k.group);
+      this.lightPool.release(k.lightH);   // a parked object holds no rig slot
+      k.lightH = null;
+      k.alive = false;                    // and is never updated or claimed
+      k.done = true;
+    }
+    this._warmObjects = keep;
   }
 
   setState(s) {
@@ -614,6 +696,7 @@ class Game {
     this.spawner.reset();
     this.fx.clear();
     this.particles.clear();
+    this.lightPool.clear();
   }
 
   // ---------- per-frame ----------

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { EnemyBase } from './enemyBase.js';
-import { createFlyerModel, animateFlyer } from './enemyModels.js';
+import { createFlyerModel, releaseFlyerModel, animateFlyer } from './enemyModels.js';
 import { EnemyProjectile } from './enemyProjectile.js';
 import { randRange, clamp } from '../core/mathUtils.js';
 
@@ -117,8 +117,10 @@ export class Flyer extends EnemyBase {
   dispose() {
     this.hpBar?.dispose();
     this.hpBar = null;
+    if (!this.model) return; // a body is only handed back once
     this.game.scene.remove(this.model.root);
-    this.model.root.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
-    for (const m of this.model.mats) m.dispose();
+    // pooled, not disposed — see Grunt.dispose
+    releaseFlyerModel(this.model);
+    this.model = null;
   }
 }

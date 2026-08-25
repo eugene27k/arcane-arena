@@ -47,12 +47,23 @@ export function setRim(mat, { color, strength } = {}) {
   if (strength !== undefined) u.uRimStrength.value = strength;
 }
 
+// A clone per material would be a fresh GPU upload of the same pixels every
+// time — and one that nothing ever disposes, since Material.dispose() does not
+// touch its maps. Clones are keyed by source and tile count instead, so every
+// demon in a wave shares one texture object.
+const tileCache = new Map();
+
 function tiled(tex, repeat) {
   if (!tex) return null;
-  const t = tex.clone();
-  t.needsUpdate = true;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(repeat, repeat);
+  const key = `${tex.uuid}:${repeat}`;
+  let t = tileCache.get(key);
+  if (!t) {
+    t = tex.clone();
+    t.needsUpdate = true;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(repeat, repeat);
+    tileCache.set(key, t);
+  }
   return t;
 }
 

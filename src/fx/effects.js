@@ -199,11 +199,14 @@ export class Effects {
     };
     const muzzle = glow(coreColor, 0.9);
     const impact = glow(color, 1.6);
-    const impactLight = new THREE.PointLight(color, 0, 10, 2);
-    const muzzleLight = new THREE.PointLight(coreColor, 0, 6, 2);
+    // rig slots, not new lights: the scene's point-light count is baked into
+    // every lit material's program cache key, so a beam that added two lights
+    // would recompile the whole arena each time the trigger is pulled
+    const impactLight = this.lights.acquire(4);
+    const muzzleLight = this.lights.acquire(4);
 
-    for (const o of [ribbon, ...strands, muzzle, impact, impactLight, muzzleLight]) this.scene.add(o);
-    this.beam = { ribbon, strands, muzzle, impact, impactLight, muzzleLight, t: 0, sparkAcc: 0 };
+    for (const o of [ribbon, ...strands, muzzle, impact]) this.scene.add(o);
+    this.beam = { ribbon, strands, muzzle, impact, impactLight, muzzleLight, color, coreColor, t: 0, sparkAcc: 0 };
   }
 
   // from/to in world space; `hot` = the far end is a demon, not stone.
@@ -241,10 +244,8 @@ export class Effects {
     beam.muzzle.scale.setScalar(0.72 + 0.16 * Math.sin(beam.t * 53));
     beam.impact.position.copy(to);
     beam.impact.scale.setScalar((hot ? 1.5 : 1) * (0.9 + 0.25 * Math.sin(beam.t * 47)));
-    beam.muzzleLight.position.copy(from);
-    beam.muzzleLight.intensity = 18 + Math.sin(beam.t * 53) * 6;
-    beam.impactLight.position.copy(to);
-    beam.impactLight.intensity = (hot ? 46 : 24) + Math.sin(beam.t * 47) * 10;
+    this.lights.hold(beam.muzzleLight, from, beam.coreColor, 18 + Math.sin(beam.t * 53) * 6, 6);
+    this.lights.hold(beam.impactLight, to, beam.color, (hot ? 46 : 24) + Math.sin(beam.t * 47) * 10, 10);
 
     // continuous spatter off the impact point, paced so a long burn can't
     // swallow the particle budget
@@ -265,7 +266,9 @@ export class Effects {
     const beam = this.beam;
     if (!beam) return;
     this.beam = null;
-    for (const o of [beam.ribbon, ...beam.strands, beam.muzzle, beam.impact, beam.impactLight, beam.muzzleLight]) {
+    this.lights.release(beam.impactLight);
+    this.lights.release(beam.muzzleLight);
+    for (const o of [beam.ribbon, ...beam.strands, beam.muzzle, beam.impact]) {
       this.scene.remove(o);
       o.geometry?.dispose();
       o.material?.dispose();
@@ -707,8 +710,8 @@ export class Effects {
       color, blending: THREE.AdditiveBlending, transparent: true,
       depthWrite: false, side: THREE.DoubleSide,
     }));
-    const light = new THREE.PointLight(color, 0, 14, 2);
-    for (const o of [core, halo, ring, floorRing, light]) this.scene.add(o);
+    const light = this.lights.acquire(4); // a rig slot — see LightPool
+    for (const o of [core, halo, ring, floorRing]) this.scene.add(o);
     this.charge = { core, halo, ring, floorRing, light, color, coreColor, t: 0, moteAcc: 0 };
   }
 
@@ -743,9 +746,7 @@ export class Effects {
     c.floorRing.rotation.y = -c.t * 1.4;
     c.floorRing.material.opacity = 0.2 + 0.55 * t01;
 
-    c.light.position.copy(orbPos);
-    c.light.intensity = (20 + 190 * grow) * flicker;
-    c.light.distance = 8 + 12 * t01;
+    this.lights.hold(c.light, orbPos, c.color, (20 + 190 * grow) * flicker, 8 + 12 * t01);
 
     // Motes of raw mana dragged out of the air and swallowed by the orb. Spawned
     // on a shell and given an inward velocity, so the flow reads as feeding it.
@@ -777,7 +778,7 @@ export class Effects {
       o.geometry?.dispose();
       o.material.dispose();
     }
-    this.scene.remove(c.light);
+    this.lights.release(c.light);
   }
 
   // Release: the held sun tears loose. A hard ring left behind at the hands so

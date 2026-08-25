@@ -27,9 +27,10 @@ export class Portal {
     this.group.scale.setScalar(0.01);
     game.scene.add(this.group);
 
-    this.light = new THREE.PointLight(0xff3a20, 0, 12, 2);
-    this.light.position.copy(this.group.position);
-    game.scene.add(this.light);
+    // A slot from the permanent rig, not a light of its own: adding one to the
+    // scene would re-key and recompile every lit material in the arena, and a
+    // wave opens a portal per demon.
+    this.lightH = game.lightPool.acquire(3);
 
     game.audio.play('portalOpen');
   }
@@ -53,18 +54,18 @@ export class Portal {
       const t = Math.min(1, this.age / 0.55);
       const s = t * t * (3 - 2 * t);
       this.group.scale.setScalar(Math.max(0.01, s));
-      this.light.intensity = 60 * s;
+      this._light(60 * s);
       if (t >= 1) this.state = 'open';
     } else if (this.state === 'open') {
       const pulse = 1 + Math.sin(this.age * 7) * 0.05;
       this.group.scale.setScalar(pulse);
-      this.light.intensity = 55 + Math.sin(this.age * 9) * 12;
+      this._light(55 + Math.sin(this.age * 9) * 12);
       this.game.fx.portalSwirl(this.pos, this.age);
     } else if (this.state === 'closing') {
       this.closeAge += dt;
       const t = Math.min(1, this.closeAge / 0.45);
       this.group.scale.setScalar(Math.max(0.01, 1 - t));
-      this.light.intensity = 60 * (1 - t);
+      this._light(60 * (1 - t));
       if (t >= 1) {
         this.done = true;
         this.dispose();
@@ -72,9 +73,14 @@ export class Portal {
     }
   }
 
+  _light(intensity) {
+    this.game.lightPool.hold(this.lightH, this.group.position, 0xff3a20, intensity, 12);
+  }
+
   dispose() {
     this.game.scene.remove(this.group);
-    this.game.scene.remove(this.light);
+    this.game.lightPool.release(this.lightH);
+    this.lightH = null;
     this.ring.geometry.dispose();
     this.ring.material.dispose();
     this.inner.geometry.dispose();

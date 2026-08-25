@@ -32,11 +32,20 @@ export class Projectile {
     // Optional: a light per bolt is what sells a fireball, and what makes a
     // sky full of them a slideshow — a barrage lights only its big rocks.
     if (opts.light !== false) {
-      this.glow = new THREE.PointLight(opts.color, opts.lightIntensity ?? 40, opts.lightRange ?? 9, 2);
-      this.glow.position.copy(this.pos);
-      game.scene.add(this.glow);
+      this.glowColor = opts.color;
+      this.glowIntensity = opts.lightIntensity ?? 40;
+      this.glowRange = opts.lightRange ?? 9;
+      // a slot from the permanent rig — a real light per bolt would recompile
+      // every lit material in the arena on the way in and again on the way out
+      this.glow = game.lightPool.acquire(1);
+      this._glow();
     }
     this._trailAcc = 0;
+  }
+
+  _glow() {
+    if (!this.glow) return;
+    this.game.lightPool.hold(this.glow, this.pos, this.glowColor, this.glowIntensity, this.glowRange);
   }
 
   update(dt) {
@@ -74,7 +83,7 @@ export class Projectile {
 
     this.pos.copy(to);
     this.mesh.position.copy(this.pos);
-    this.glow?.position.copy(this.pos);
+    this._glow();
 
     this._trailAcc += dt;
     while (this._trailAcc > this.trailInterval) {
@@ -135,7 +144,7 @@ export class Projectile {
 
   dispose() {
     this.game.scene.remove(this.mesh);
-    if (this.glow) this.game.scene.remove(this.glow);
+    if (this.glow) { this.game.lightPool.release(this.glow); this.glow = null; }
     this.mesh.geometry.dispose();
     this.mesh.material.dispose();
   }

@@ -4,6 +4,8 @@ import { SPELLS } from '../config/spellConfig.js';
 import { makeRadialGlowTexture } from '../fx/textures.js';
 import { randRange } from '../core/mathUtils.js';
 
+const _bladeLightPos = new THREE.Vector3();
+
 let shaftTex = null;
 
 // The blade in the stone. Unlike essence, it does not come to the mage and it
@@ -55,11 +57,11 @@ export class BladePickup {
     this.group.add(pool);
     this.pool = pool;
 
-    // A dedicated light rather than the flash pool: this one has to burn for a
-    // whole wave, and the pool's six slots are spoken for by explosions.
-    this.light = new THREE.PointLight(cfg.edgeColor, 16, 10, 2);
-    this.light.position.y = 1.0;
-    this.group.add(this.light);
+    // A rig slot at beacon priority: this one has to burn for a whole wave, so
+    // it outranks flashes and bolts and cannot be evicted by them. It is never
+    // a light of its own — adding one would recompile every lit material.
+    this.lightColor = cfg.edgeColor;
+    this.lightH = game.lightPool.acquire(2);
 
     game.scene.add(this.group);
   }
@@ -86,7 +88,10 @@ export class BladePickup {
     this.blade.edgeMat.emissiveIntensity = 1.0 + pulse * 1.9;
     this.shaft.material.opacity = 0.06 + pulse * 0.07;
     this.pool.material.opacity = 0.3 + pulse * 0.25;
-    this.light.intensity = 13 + pulse * 16;
+    game.lightPool.hold(
+      this.lightH, _bladeLightPos.set(this.group.position.x, this.group.position.y + 1.0, this.group.position.z),
+      this.lightColor, 13 + pulse * 16, 10,
+    );
 
     if (Math.random() < dt * 8) {
       game.particles.burst(this.pos, 1, () => ({
@@ -110,6 +115,8 @@ export class BladePickup {
   dispose() {
     if (!this.alive) return;
     this.alive = false;
+    this.game.lightPool.release(this.lightH);
+    this.lightH = null;
     this.game.scene.remove(this.group);
     this.group.traverse((o) => {
       if (o.isMesh || o.isSprite) {

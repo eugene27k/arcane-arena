@@ -3,6 +3,8 @@ import { makeRadialGlowTexture } from '../fx/textures.js';
 import { randRange } from '../core/mathUtils.js';
 import { LIFE_RELICS } from '../config/pickupConfig.js';
 
+const _relicLightPos = new THREE.Vector3();
+
 let poolTex = null;
 
 // A heart, not a lamp. Two swells and a rest — so a relic standing across the
@@ -73,9 +75,11 @@ export class LifeRelic {
     this.pool.position.y = 0.08;
     this.group.add(this.pool);
 
-    this.light = new THREE.PointLight(tier.color, full ? 16 : 9, full ? 12 : 8, 2);
-    this.light.position.y = this.gem.position.y;
-    this.group.add(this.light);
+    // A rig slot at beacon priority (see LightPool): a font burns for a whole
+    // wave, and a light of its own would recompile every lit material twice.
+    this.lightColor = tier.color;
+    this.lightRange = full ? 12 : 8;
+    this.lightH = game.lightPool.acquire(2);
 
     // A font announces itself the way the blade does: a column to navigate by
     // from anywhere in the hall, plus a ring turning around the stone. The
@@ -146,7 +150,10 @@ export class LifeRelic {
     this.core.material.opacity = (0.2 + beat * 0.6) * lit;
     this.core.scale.setScalar((this.tier.full ? 2.2 : 1.5) * (0.86 + beat * 0.24));
     this.pool.material.opacity = (0.14 + beat * 0.4) * lit;
-    this.light.intensity = (this.tier.full ? 6 + beat * 22 : 3 + beat * 12) * lit;
+    this.game.lightPool.hold(
+      this.lightH, _relicLightPos.set(this.group.position.x, this.group.position.y + this.gem.position.y, this.group.position.z),
+      this.lightColor, (this.tier.full ? 6 + beat * 22 : 3 + beat * 12) * lit, this.lightRange,
+    );
 
     if (this.shaft) this.shaft.material.opacity = (0.04 + beat * 0.075) * lit;
     if (this.halo) {
@@ -203,6 +210,8 @@ export class LifeRelic {
   dispose() {
     if (!this.alive) return;
     this.alive = false;
+    this.game.lightPool.release(this.lightH);
+    this.lightH = null;
     this.game.scene.remove(this.group);
     this.group.traverse((o) => {
       if (o.isMesh || o.isSprite) {

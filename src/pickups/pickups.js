@@ -7,6 +7,13 @@ let healthGlowTex = null;
 
 // ManaEssence & HealthPickup (PRD §16-§17): glowing orbs dropped by enemies;
 // the player must physically approach; orb flies to the player on collect.
+// Orb bodies are pooled by kind, not rebuilt per drop. A kill creates one and
+// picking it up destroys it, so without this every fight is a stream of
+// material disposals — and dropping the last material that used a compiled
+// shader makes three delete that shader, so the next demon to die recompiles
+// it. Cheap geometry, but the stall is the same kind as the demons'.
+const orbPool = { mana: [], health: [] };
+
 export class Pickup {
   constructor(game, kind, pos, amount) {
     this.game = game;
@@ -27,21 +34,32 @@ export class Pickup {
     const isMana = kind === 'mana';
     const color = isMana ? 0x50c8ff : 0xff5060;
 
-    this.group = new THREE.Group();
-    this.crystal = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(isMana ? 0.26 : 0.24, 0),
-      new THREE.MeshStandardMaterial({
-        color, emissive: color, emissiveIntensity: 1.6, roughness: 0.3,
-      })
-    );
-    this.group.add(this.crystal);
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: isMana ? manaGlowTex : healthGlowTex,
-      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.85,
-    }));
-    glow.scale.setScalar(1.5);
-    this.group.add(glow);
-    this.glowSprite = glow;
+    const spare = orbPool[kind].pop();
+    if (spare) {
+      this.group = spare.group;
+      this.crystal = spare.crystal;
+      this.glowSprite = spare.glow;
+      this.group.scale.setScalar(1);
+      this.crystal.rotation.set(0, 0, 0);
+      this.crystal.material.emissiveIntensity = 1.6;
+      this.glowSprite.material.opacity = 0.85;
+    } else {
+      this.group = new THREE.Group();
+      this.crystal = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(isMana ? 0.26 : 0.24, 0),
+        new THREE.MeshStandardMaterial({
+          color, emissive: color, emissiveIntensity: 1.6, roughness: 0.3,
+        })
+      );
+      this.group.add(this.crystal);
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: isMana ? manaGlowTex : healthGlowTex,
+        blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.85,
+      }));
+      glow.scale.setScalar(1.5);
+      this.group.add(glow);
+      this.glowSprite = glow;
+    }
     this.group.position.copy(pos);
     game.scene.add(this.group);
   }
@@ -102,8 +120,8 @@ export class Pickup {
     if (!this.alive) return;
     this.alive = false;
     this.game.scene.remove(this.group);
-    this.crystal.geometry.dispose();
-    this.crystal.material.dispose();
+    // back to the pool intact — see the note above orbPool
+    orbPool[this.kind].push({ group: this.group, crystal: this.crystal, glow: this.glowSprite });
   }
 }
 

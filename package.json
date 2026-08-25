@@ -1,6 +1,6 @@
 {
   "name": "arcane-arena",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Arcane Arena — third-person magical arena roguelite (MVP vertical slice)",
   "type": "module",
   "scripts": {

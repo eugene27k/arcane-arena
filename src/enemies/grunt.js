@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { EnemyBase } from './enemyBase.js';
-import { createGruntModel, animateGrunt } from './enemyModels.js';
+import { createGruntModel, releaseGruntModel, animateGrunt } from './enemyModels.js';
 import { horizontalDist } from '../core/mathUtils.js';
 
 // Demon Grunt (PRD §20): melee pressure. Navigates the waypoint graph
@@ -172,10 +172,11 @@ export class Grunt extends EnemyBase {
   dispose() {
     this.hpBar?.dispose();
     this.hpBar = null;
+    if (!this.model) return; // a body is only handed back once
     this.game.scene.remove(this.model.root);
-    this.model.root.traverse((o) => {
-      if (o.isMesh) { o.geometry.dispose(); }
-    });
-    for (const m of this.model.mats) m.dispose();
+    // back to the pool intact — disposing the materials would evict their
+    // compiled shaders and stall the next demon that spawns
+    releaseGruntModel(this.model);
+    this.model = null;
   }
 }

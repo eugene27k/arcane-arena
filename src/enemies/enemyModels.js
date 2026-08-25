@@ -20,15 +20,20 @@ function setBaseEmissive(mat, hex, intensity) {
 // transform the entity writes each frame (position + facing), `group` carries
 // the purely local animation (bob, lean, death tilt). Keeping them apart is
 // what stops an animation offset from overwriting the entity's real altitude.
-export function createGruntModel() {
+function buildGruntModel() {
   const root = new THREE.Group();
   const group = new THREE.Group();
   root.add(group);
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x7a221a, roughness: 0.8 });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x3a0e0a, roughness: 0.9 });
-  const hornMat = new THREE.MeshStandardMaterial({ color: 0xc8b090, roughness: 0.6 });
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffc020 });
-  const clawMat = new THREE.MeshStandardMaterial({ color: 0x1a0a08, roughness: 0.5 });
+  // `transparent` from the start, not from the death frame: three folds it into
+  // every material's program cache key, so flipping it when a demon starts to
+  // fade would recompile that shader mid-fight — a whole wave dying at once
+  // used to cost half a second of frozen frames. At opacity 1 with depth
+  // writing on, a transparent material draws the same pixels as an opaque one.
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x7a221a, roughness: 0.8, transparent: true });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x3a0e0a, roughness: 0.9, transparent: true });
+  const hornMat = new THREE.MeshStandardMaterial({ color: 0xc8b090, roughness: 0.6, transparent: true });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffc020, transparent: true });
+  const clawMat = new THREE.MeshStandardMaterial({ color: 0x1a0a08, roughness: 0.5, transparent: true });
   // faint internal heat so the silhouette reads in unlit corners
   setBaseEmissive(bodyMat, 0x3a0d06, 0.8);
   setBaseEmissive(darkMat, 0x220704, 0.8);
@@ -97,6 +102,8 @@ export function createGruntModel() {
   group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   // eyeMat + faceGlowMat included so the death fade takes them down with the body
   const mats = [bodyMat, darkMat, hornMat, clawMat, eyeMat, faceGlowMat];
+  // the death fade drives opacity down from here, and reuse restores it
+  for (const m of mats) m.userData.baseOpacity = m.opacity;
   return { root, group, armL, armR, legL, legR, eyeMat, faceGlowMat, mats };
 }
 
@@ -107,7 +114,7 @@ export function animateGrunt(model, anim, dt, time) {
     group.rotation.x = t * 1.5;
     group.scale.setScalar(Math.max(0.01, 1 - t * 0.6));
     group.position.y = -t * 0.4;
-    for (const m of model.mats) { m.transparent = true; m.opacity = 1 - t; }
+    for (const m of model.mats) m.opacity = 1 - t;
     return;
   }
   const sf = Math.min(1, anim.speed / 5);
@@ -138,14 +145,15 @@ export function animateGrunt(model, anim, dt, time) {
   }
 }
 
-export function createFlyerModel() {
+function buildFlyerModel() {
   const root = new THREE.Group();
   const group = new THREE.Group();
   root.add(group);
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x50123a, roughness: 0.75 });
-  const wingMat = new THREE.MeshStandardMaterial({ color: 0x2c0a20, roughness: 0.85, side: THREE.DoubleSide });
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff40c0 });
-  const mouthMat = new THREE.MeshBasicMaterial({ color: 0x30052a });
+  // transparent up front — see the note in createGruntModel
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x50123a, roughness: 0.75, transparent: true });
+  const wingMat = new THREE.MeshStandardMaterial({ color: 0x2c0a20, roughness: 0.85, side: THREE.DoubleSide, transparent: true });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff40c0, transparent: true });
+  const mouthMat = new THREE.MeshBasicMaterial({ color: 0x30052a, transparent: true });
   setBaseEmissive(bodyMat, 0x2a0824, 0.8);
   setBaseEmissive(wingMat, 0x180514, 0.8);
   dressHide(bodyMat, { repeat: 2.2, normalScale: 1.0 });
@@ -171,7 +179,7 @@ export function createFlyerModel() {
   group.add(mouth);
 
   const hornGeo = new THREE.ConeGeometry(0.05, 0.22, 5);
-  const hornMat = new THREE.MeshStandardMaterial({ color: 0xa08868, roughness: 0.6 });
+  const hornMat = new THREE.MeshStandardMaterial({ color: 0xa08868, roughness: 0.6, transparent: true });
   const hL = new THREE.Mesh(hornGeo, hornMat); hL.position.set(-0.12, 0.95, 0.2); hL.rotation.z = 0.4;
   const hR = new THREE.Mesh(hornGeo, hornMat); hR.position.set(0.12, 0.95, 0.2); hR.rotation.z = -0.4;
   group.add(hL, hR);
@@ -202,6 +210,7 @@ export function createFlyerModel() {
 
   group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   const mats = [bodyMat, wingMat, hornMat, eyeMat, wispMat];
+  for (const m of mats) m.userData.baseOpacity = m.opacity;
   return { root, group, wingL, wingR, mouth, eyeMatL: eyeMat, mats };
 }
 
@@ -211,7 +220,7 @@ export function animateFlyer(model, anim, dt, time) {
     const t = anim.deathT;
     group.rotation.z = t * 2.5;
     group.scale.setScalar(Math.max(0.01, 1 - t * 0.7));
-    for (const m of model.mats) { m.transparent = true; m.opacity = 1 - t; }
+    for (const m of model.mats) m.opacity = 1 - t;
     wingL.rotation.z = 1.2;
     wingR.rotation.z = -1.2;
     return;
@@ -230,3 +239,62 @@ export function animateFlyer(model, anim, dt, time) {
     model.mouth.material.color.setHex(0x30052a);
   }
 }
+
+// ---------- model pooling ----------
+// Demon bodies are checked out of a pool and handed back on death, never
+// rebuilt. Building one costs twenty-odd geometries, six materials and seven
+// texture uploads; *disposing* one is worse, because dropping the last material
+// that used a compiled program makes three delete that program, so the next
+// demon to walk out of a portal recompiles it from source. A wave that ended
+// and a wave that began used to trade the same shaders back and forth for
+// hundreds of milliseconds each way. The pool is bounded by how many demons can
+// be alive at once, so it never grows past a handful.
+const gruntPool = [];
+const flyerPool = [];
+
+// Undo everything a life and a death wrote on a body, so a reused one is
+// indistinguishable from a fresh one. Animation rewrites the limbs every frame,
+// but the death tilt, the fade and the windup eye colour would otherwise
+// survive into the next demon.
+function resetModel(model, eyeHex, glowHex) {
+  const { root, group } = model;
+  root.position.set(0, 0, 0);
+  root.rotation.set(0, 0, 0);
+  root.scale.setScalar(1);
+  root.visible = true;
+  group.position.set(0, 0, 0);
+  group.rotation.set(0, 0, 0);
+  group.scale.setScalar(1);
+  for (const m of model.mats) {
+    m.opacity = m.userData.baseOpacity ?? 1;
+    if (m.emissive) {
+      m.emissive.setHex(m.userData.baseEmissive ?? 0x000000);
+      m.emissiveIntensity = m.userData.baseEmissiveIntensity ?? 0;
+    }
+  }
+  model.eyeMat?.color.setHex(eyeHex);
+  model.eyeMatL?.color.setHex(eyeHex);
+  model.faceGlowMat?.color.setHex(glowHex);
+}
+
+export function createGruntModel() {
+  const m = gruntPool.pop();
+  if (!m) return buildGruntModel();
+  resetModel(m, 0xffc020, 0xffffff);
+  return m;
+}
+
+export function createFlyerModel() {
+  const m = flyerPool.pop();
+  if (!m) return buildFlyerModel();
+  resetModel(m, 0xff40c0, 0xffffff);
+  m.mouth.material.color.setHex(0x30052a);
+  m.wingL.rotation.set(0, 0, 0);
+  m.wingR.rotation.set(0, 0, 0);
+  return m;
+}
+
+// Hand a body back. The caller has already taken it out of the scene; nothing
+// here is disposed, which is the point.
+export function releaseGruntModel(model) { if (model) gruntPool.push(model); }
+export function releaseFlyerModel(model) { if (model) flyerPool.push(model); }
